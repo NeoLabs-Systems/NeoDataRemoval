@@ -1,6 +1,6 @@
 // dashboard.js
 'use strict';
-import { apiFetch } from './app.js';
+import { apiFetch, escHtml } from './app.js';
 
 export async function renderDashboard(container) {
   container.innerHTML = `
@@ -44,7 +44,7 @@ export async function renderDashboard(container) {
       <thead><tr><th>Broker</th><th>Priority</th><th>Status</th><th>Detected</th><th></th></tr></thead>
       <tbody>${exps.map(e => `
         <tr>
-          <td>${e.broker_name || '—'}</td>
+          <td>${escHtml(e.broker_name)}</td>
           <td>${chipPriority(e.priority)}</td>
           <td>${chipStatus(e.status)}</td>
           <td>${fmtDate(e.detected_at)}</td>
@@ -57,11 +57,11 @@ export async function renderDashboard(container) {
 
 function chipStatus(s) {
   const map = { detected:'detected', assumed:'assumed', removal_sent:'sent', ai_email_sent:'sent', removal_confirmed:'confirmed', manual_pending:'manual', re_exposed:'reexposed' };
-  const cls = map[s] || 'manual';
-  return `<span class="chip chip-${cls}">${s.replace(/_/g,' ')}</span>`;
+  const cls = escHtml(map[s] || 'manual');
+  return `<span class="chip chip-${cls}">${escHtml((s||'').replace(/_/g,' '))}</span>`;
 }
 function chipPriority(p) {
-  return `<span class="chip chip-${p}">${p}</span>`;
+  return `<span class="chip chip-${escHtml(p)}">${escHtml(p)}</span>`;
 }
 function fmtDate(d) {
   if (!d) return '—';

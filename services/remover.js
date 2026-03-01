@@ -16,8 +16,16 @@ function getProfile(profileId, userId) {
 }
 
 /* Attempt automated form-based opt-out */
+function isSafeUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { return false; }
+}
+
 async function formRemoval(broker, profile) {
   if (!broker.opt_out_url) return { success: false, method: 'form', notes: 'No opt-out URL configured' };
+  if (!isSafeUrl(broker.opt_out_url)) return { success: false, method: 'form', notes: 'Invalid opt-out URL scheme' };
 
   const email   = profile.emails && profile.emails.length > 0 ? (profile.emails[0].address || profile.emails[0]) : '';
   const phone   = profile.phones && profile.phones.length > 0 ? (profile.phones[0].number  || profile.phones[0]) : '';
@@ -101,7 +109,7 @@ async function sendRemoval(exposureId, userId, useAi, draftBody = null) {
     if (!aiDraft && useAi) {
       try {
         const { draftRemovalEmail } = require('./aiHelper');
-        aiDraft = await draftRemovalEmail(exposure.broker_name, profile, exposure.broker_url);
+        aiDraft = await draftRemovalEmail(exposure.broker_name, profile, exposure.broker_url, userId);
       } catch {}
     }
     result = await sendEmailRemoval(exposure, profile, aiDraft);

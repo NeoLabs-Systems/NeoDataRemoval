@@ -19,7 +19,7 @@ router.post('/draft-removal', requireAuth, async (req, res) => {
   ).get(exposure_id, req.user.id);
   if (!exposure) return res.status(404).json({ error: 'Exposure not found' });
 
-  const profile  = db.prepare('SELECT * FROM profiles WHERE id = ?').get(exposure.profile_id);
+  const profile  = db.prepare('SELECT * FROM profiles WHERE id = ? AND user_id = ?').get(exposure.profile_id, req.user.id);
   if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
   // Decrypt profile data
@@ -29,7 +29,7 @@ router.post('/draft-removal', requireAuth, async (req, res) => {
 
   try {
     const { draftRemovalEmail } = require('../services/aiHelper');
-    const draft = await draftRemovalEmail(exposure.broker_name, profileData, exposure.broker_url);
+    const draft = await draftRemovalEmail(exposure.broker_name, profileData, exposure.broker_url, req.user.id);
     if (!draft) return res.status(503).json({ error: 'AI unavailable — no API key or call failed' });
     res.json({ draft });
   } catch (err) {

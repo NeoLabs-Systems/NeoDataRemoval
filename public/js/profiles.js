@@ -1,6 +1,6 @@
 // profiles.js
 'use strict';
-import { apiFetch } from './app.js';
+import { apiFetch, escHtml } from './app.js';
 
 export async function renderProfiles(container) {
   container.innerHTML = `
@@ -42,7 +42,7 @@ export async function renderProfiles(container) {
 
   let editingId = null;
 
-  document.getElementById('btnAddProfile').addEventListener('click', () => openModal(null));
+  document.getElementById('btnAddProfile').addEventListener('click', () => openModal());
   document.getElementById('closeProfileModal').addEventListener('click', closeModal);
   document.getElementById('cancelProfile').addEventListener('click', closeModal);
   document.getElementById('saveProfile').addEventListener('click', saveProfile);
@@ -70,19 +70,15 @@ export async function renderProfiles(container) {
     wrap.innerHTML = `<div class="card-grid">
       ${profiles.map(p => `
         <div class="card">
-          <div class="card-title">${p.name}</div>
-          <div class="card-meta">${p.email || ''} ${p.phone || ''}</div>
-          <div class="card-meta" style="font-size:.75rem;color:var(--muted)">ID: ${p.id}</div>
+          <div class="card-title">${escHtml(p.name)}</div>
+          <div class="card-meta"></div>
+          <div class="card-meta" style="font-size:.75rem;color:var(--muted)">ID: ${escHtml(p.id)}</div>
           <div class="card-actions">
-            <button class="btn-secondary btn-sm btn-edit-profile" data-id="${p.id}">Edit</button>
-            <button class="btn-danger btn-sm btn-del-profile" data-id="${p.id}">Delete</button>
+            <button class="btn-danger btn-sm btn-del-profile" data-id="${escHtml(p.id)}">Delete</button>
           </div>
         </div>`).join('')}
     </div>`;
 
-    wrap.querySelectorAll('.btn-edit-profile').forEach(btn => {
-      btn.addEventListener('click', () => loadAndEdit(btn.dataset.id));
-    });
     wrap.querySelectorAll('.btn-del-profile').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Delete this profile and all associated data?')) return;
@@ -92,25 +88,18 @@ export async function renderProfiles(container) {
     });
   }
 
-  async function loadAndEdit(id) {
-    const res = await apiFetch(`/api/profiles/${id}`);
-    if (!res) return;
-    const p = await res.json();
-    openModal(p);
-  }
-
-  function openModal(profile) {
-    editingId = profile ? profile.id : null;
-    document.getElementById('profileModalTitle').textContent = profile ? 'Edit Profile' : 'New Profile';
-    document.getElementById('pfName').value  = profile ? profile.full_name || '' : '';
-    document.getElementById('pfDob').value   = profile ? profile.dob       || '' : '';
-    document.getElementById('pfAliases').value = profile && profile.aliases ? profile.aliases.join(', ') : '';
+  function openModal() {
+    editingId = null;
+    document.getElementById('profileModalTitle').textContent = 'New Profile';
+    document.getElementById('pfName').value    = '';
+    document.getElementById('pfDob').value     = '';
+    document.getElementById('pfAliases').value = '';
     document.getElementById('profileErr').textContent = '';
 
-    // render addresses, phones, emails
-    const addrs  = (profile && profile.addresses) || [];
-    const phones = (profile && profile.phones)    || [];
-    const emails = (profile && profile.emails)    || [];
+    // render empty rows for new profile
+    const addrs  = [];
+    const phones = [];
+    const emails = [];
 
     document.getElementById('addressList').innerHTML = '';
     document.getElementById('phoneList').innerHTML   = '';
@@ -183,9 +172,7 @@ export async function renderProfiles(container) {
     };
     const btn    = document.getElementById('saveProfile');
     btn.disabled = true;
-    const url    = editingId ? `/api/profiles/${editingId}` : '/api/profiles';
-    const method = editingId ? 'PUT' : 'POST';
-    const res    = await apiFetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const res    = await apiFetch('/api/profiles', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     btn.disabled = false;
     if (!res) return;
     const data   = await res.json();

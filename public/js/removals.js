@@ -1,6 +1,6 @@
 // removals.js
 'use strict';
-import { apiFetch } from './app.js';
+import { apiFetch, escHtml } from './app.js';
 
 export async function renderRemovals(container) {
   container.innerHTML = `
@@ -39,10 +39,10 @@ export async function renderRemovals(container) {
       <thead><tr><th>Broker</th><th>Method</th><th>Status</th><th>Notes</th><th>Sent At</th></tr></thead>
       <tbody>${rows.map(r => `
         <tr>
-          <td><strong>${r.broker_name || '—'}</strong></td>
-          <td><span class="chip chip-manual">${r.method || '—'}</span></td>
+          <td><strong>${escHtml(r.broker_name)}</strong></td>
+          <td><span class="chip chip-manual">${escHtml(r.method)}</span></td>
           <td>${chipStatus(r.status)}</td>
-          <td style="font-size:.8rem;color:var(--muted);max-width:260px;word-break:break-word">${r.notes || '—'}</td>
+          <td style="font-size:.8rem;color:var(--muted);max-width:260px;word-break:break-word">${escHtml(r.notes)}</td>
           <td>${fmtDate(r.sent_at)}</td>
         </tr>`).join('')}
       </tbody>
@@ -52,8 +52,8 @@ export async function renderRemovals(container) {
 
 function chipStatus(s) {
   const map = { sent:'sent', confirmed:'confirmed', failed:'assumed', manual:'manual' };
-  const cls = map[s] || 'manual';
-  return `<span class="chip chip-${cls}">${s || '—'}</span>`;
+  const cls = escHtml(map[s] || 'manual');
+  return `<span class="chip chip-${cls}">${escHtml(s || '—')}</span>`;
 }
 function fmtDate(d) {
   if (!d) return '—';

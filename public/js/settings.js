@@ -31,10 +31,11 @@ export async function renderSettings(contentEl) {
 
     <div class="settings-panel" data-panel="account">
       <h3>Change Password</h3>
+      <div class="field"><label>Current Password</label><input id="curPass" type="password" placeholder="your current password" autocomplete="current-password"></div>
       <div class="field"><label>New Password</label><input id="newPass" type="password" placeholder="min 10 characters" autocomplete="new-password"></div>
-      <div class="field"><label>Confirm Password</label><input id="confPass" type="password" placeholder="repeat password" autocomplete="new-password"></div>
-      <div class="error" id="passErr"></div>
-      <button class="btn-primary btn-sm" id="btnChangePass" style="margin-top:4px">Update Password</button>
+      <div class="field"><label>Confirm New Password</label><input id="confPass" type="password" placeholder="repeat new password" autocomplete="new-password"></div>
+      <div class="error" id="passErr" style="margin-bottom:8px"></div>
+      <button class="btn-primary btn-sm" id="btnChangePass">Change Password</button>
     </div>
 
     <div class="settings-panel" data-panel="security">
@@ -105,20 +106,22 @@ export async function renderSettings(contentEl) {
 
   document.getElementById('btnChangePass').addEventListener('click', async () => {
     const passErr = document.getElementById('passErr');
+    const cp = document.getElementById('curPass').value;
     const np = document.getElementById('newPass').value;
-    const cp = document.getElementById('confPass').value;
+    const rp = document.getElementById('confPass').value;
     passErr.textContent = ''; passErr.classList.remove('show');
-    if (np.length < 10) { passErr.textContent = 'Password must be at least 10 characters.'; passErr.classList.add('show'); return; }
-    if (np !== cp)      { passErr.textContent = 'Passwords do not match.'; passErr.classList.add('show'); return; }
+    if (!cp)            { passErr.textContent = 'Current password is required.'; passErr.classList.add('show'); return; }
+    if (np.length < 10) { passErr.textContent = 'New password must be at least 10 characters.'; passErr.classList.add('show'); return; }
+    if (np !== rp)      { passErr.textContent = 'Passwords do not match.'; passErr.classList.add('show'); return; }
     const r = await apiFetch('/api/auth/change-password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: np }),
+      body: JSON.stringify({ current_password: cp, password: np }),
     });
     const d = r ? await r.json() : {};
     if (!r || !r.ok) { passErr.textContent = d.error || 'Failed'; passErr.classList.add('show'); return; }
-    passErr.style.color = 'var(--success)'; passErr.textContent = 'Password updated!'; passErr.classList.add('show');
-    document.getElementById('newPass').value  = '';
-    document.getElementById('confPass').value = '';
+    // Server clears the session cookie — redirect to login
+    passErr.style.color = 'var(--success)'; passErr.textContent = 'Password updated! Redirecting to login…'; passErr.classList.add('show');
+    setTimeout(() => { window.location.href = '/login.html'; }, 1500);
   });
 
   // 2FA section

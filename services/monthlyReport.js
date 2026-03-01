@@ -29,7 +29,7 @@ function buildReportHtml({ username, totalExposures, newExposures, removedCount,
       <td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;font-size:13px">
         <span style="background:#3b1a47;color:#c084fc;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${escHtml(e.status)}</span>
       </td>
-      ${e.profile_url ? `<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e"><a href="${escHtml(e.profile_url)}" style="color:#7c3aed;font-size:13px;text-decoration:none">View listing</a></td>` : '<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;color:#6b6784;font-size:13px">—</td>'}
+      ${(e.profile_url && /^https?:\/\//i.test(e.profile_url)) ? `<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e"><a href="${escHtml(e.profile_url)}" style="color:#7c3aed;font-size:13px;text-decoration:none">View listing</a></td>` : '<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;color:#6b6784;font-size:13px">—</td>'}
     </tr>
   `).join('');
 

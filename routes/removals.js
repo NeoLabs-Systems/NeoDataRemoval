@@ -23,6 +23,8 @@ router.post('/:exposureId', requireAuth, async (req, res) => {
 router.get('/', requireAuth, (req, res) => {
   const db     = require('../db/database').getDb();
   const { status, profile_id, limit = 100, offset = 0 } = req.query;
+  const safeLimit  = Math.min(Math.max(1, parseInt(limit)  || 100), 500);
+  const safeOffset = Math.max(0, parseInt(offset) || 0);
   let sql    = `SELECT rr.*, b.name AS broker_name, e.profile_url
                 FROM removal_requests rr
                 JOIN exposures e ON e.id = rr.exposure_id
@@ -32,7 +34,7 @@ router.get('/', requireAuth, (req, res) => {
   if (status)     { sql += ' AND rr.status = ?';     args.push(status); }
   if (profile_id) { sql += ' AND e.profile_id = ?';  args.push(profile_id); }
   sql += ` ORDER BY rr.sent_at DESC LIMIT ? OFFSET ?`;
-  args.push(parseInt(limit), parseInt(offset));
+  args.push(safeLimit, safeOffset);
   res.json(db.prepare(sql).all(...args));
 });
 
@@ -89,7 +91,7 @@ router.get('/:exposureId/draft', requireAuth, async (req, res) => {
   try {
     if (useAi) {
       const { draftRemovalEmail } = require('../services/aiHelper');
-      body = await draftRemovalEmail(brokerName, profile, exposure.broker_url);
+      body = await draftRemovalEmail(brokerName, profile, exposure.broker_url, req.user.id);
     }
   } catch (e) { console.error('[draft]', e.message); }
 

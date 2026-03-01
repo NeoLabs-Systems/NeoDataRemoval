@@ -34,7 +34,20 @@ router.put('/', requireAuth, (req, res) => {
   const allowed = Object.keys(DEFAULTS);
   const update  = {};
   for (const k of allowed) {
-    if (k in req.body) update[k] = req.body[k];
+    if (!(k in req.body)) continue;
+    const v = req.body[k];
+    if (k === 'scan_delay_ms') {
+      const n = parseInt(v);
+      if (isNaN(n)) continue;
+      update[k] = Math.min(Math.max(500, n), 60000);  // 0.5 s – 60 s
+    } else if (k === 'theme') {
+      if (!['dark','light'].includes(v)) continue;
+      update[k] = v;
+    } else if (typeof DEFAULTS[k] === 'boolean') {
+      update[k] = Boolean(v);
+    } else {
+      update[k] = v;
+    }
   }
   const merged = { ...current, ...update };
   db.prepare(`INSERT INTO settings (user_id, key, value, updated_at)

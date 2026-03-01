@@ -1,6 +1,6 @@
 // exposures.js
 'use strict';
-import { apiFetch } from './app.js';
+import { apiFetch, escHtml, safeHref } from './app.js';
 
 export async function renderExposures(container) {
   container.innerHTML = `
@@ -109,14 +109,14 @@ export async function renderExposures(container) {
 
           const verifyLinks = [];
           if (e.profile_url) {
-            verifyLinks.push(`<a href="${e.profile_url}" target="_blank" rel="noopener" style="color:var(--accent);white-space:nowrap;">View listing ↗</a>`);
+            verifyLinks.push(`<a href="${safeHref(e.profile_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);white-space:nowrap;">View listing ↗</a>`);
           }
-          verifyLinks.push(`<a href="${e.broker_url || '#'}" target="_blank" rel="noopener" style="color:var(--muted);font-size:.8rem;white-space:nowrap;">Search on site ↗</a>`);
+          verifyLinks.push(`<a href="${safeHref(e.broker_url)}" target="_blank" rel="noopener noreferrer" style="color:var(--muted);font-size:.8rem;white-space:nowrap;">Search on site ↗</a>`);
           const verifyCell = verifyLinks.join('<br>');
 
           return `
-          <tr data-id="${e.id}">
-            <td><strong>${e.broker_name || '—'}</strong></td>
+          <tr data-id="${escHtml(e.id)}">
+            <td><strong>${escHtml(e.broker_name)}</strong></td>
             <td>${chipPriority(e.priority)}</td>
             <td>${chipStatus(e.status)}</td>
             <td>${detectionLabel}</td>
@@ -124,11 +124,11 @@ export async function renderExposures(container) {
             <td style="white-space:nowrap">${fmtDate(e.detected_at)}</td>
             <td>
               <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button class="btn-secondary btn-sm btn-send-removal" data-id="${e.id}" ${['removal_sent','ai_email_sent','removal_confirmed'].includes(e.status) ? 'disabled' : ''}>
+                <button class="btn-secondary btn-sm btn-send-removal" data-id="${escHtml(e.id)}" ${['removal_sent','ai_email_sent','removal_confirmed'].includes(e.status) ? 'disabled' : ''}>
                   Send Removal
                 </button>
-                <button class="btn-secondary btn-sm btn-ai-remove" data-id="${e.id}" title="Use AI to draft opt-out email">AI</button>
-                <button class="btn-danger btn-sm btn-del-exp" data-id="${e.id}">✕</button>
+                <button class="btn-secondary btn-sm btn-ai-remove" data-id="${escHtml(e.id)}" title="Use AI to draft opt-out email">AI</button>
+                <button class="btn-danger btn-sm btn-del-exp" data-id="${escHtml(e.id)}">✕</button>
               </div>
             </td>
           </tr>`;
@@ -222,8 +222,8 @@ export async function renderExposures(container) {
 
 function chipStatus(s) {
   const map = { detected:'detected', assumed:'assumed', removal_sent:'sent', ai_email_sent:'sent', removal_confirmed:'confirmed', manual_pending:'manual', re_exposed:'reexposed' };
-  const cls = map[s] || 'manual';
-  return `<span class="chip chip-${cls}">${s.replace(/_/g,' ')}</span>`;
+  const cls = escHtml(map[s] || 'manual');
+  return `<span class="chip chip-${cls}">${escHtml((s||'').replace(/_/g,' '))}</span>`;
 }
 function chipPriority(p) {
   return `<span class="chip chip-${p}">${p}</span>`;

@@ -92,7 +92,8 @@ app.get('*', (req, res) => {
 /* ── Error handler ─────────────────────────────────────── */
 app.use((err, req, res, _next) => {
   console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+  const isProd = process.env.NODE_ENV === 'production';
+  res.status(err.status || 500).json({ error: isProd ? 'Internal error' : (err.message || 'Internal error') });
 });
 
 /* ── Boot ──────────────────────────────────────────────── */

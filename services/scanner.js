@@ -62,6 +62,14 @@ function detectPresence(html, profile) {
   return namePresent; // name alone considered a weak match
 }
 
+/* Validate that a URL uses only http/https */
+function isSafeUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { return false; }
+}
+
 /* Try to extract personal profile URL from HTML */
 function extractProfileUrl(html, brokerUrl) {
   if (!html) return null;
@@ -72,7 +80,7 @@ function extractProfileUrl(html, brokerUrl) {
   ];
   for (const pat of patterns) {
     const m = html.match(pat);
-    if (m) return m[1];
+    if (m && isSafeUrl(m[1])) return m[1];
   }
   return null;
 }
@@ -88,6 +96,11 @@ async function scanBroker(broker, profile) {
   const searchUrl  = broker.search_url_template
     ? broker.search_url_template.replace('{query}', query)
     : `${broker.url}search?q=${query}`;
+
+  // SSRF guard — only allow http/https
+  if (!isSafeUrl(searchUrl)) {
+    return { status: 'error', error: 'Invalid broker URL scheme' };
+  }
 
   try {
     const controller = new AbortController();

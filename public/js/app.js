@@ -18,6 +18,25 @@ export async function apiFetch(url, opts = {}) {
   return res;
 }
 
+/** Escape a string for safe insertion into HTML (prevents XSS) */
+export function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/** Allow only http/https URLs in href attributes — blocks javascript: and data: injection */
+export function safeHref(url) {
+  if (!url) return '#';
+  try {
+    const u = new URL(url);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? url : '#';
+  } catch { return '#'; }
+}
+
 // ── Boot ──────────────────────────────────────────────────────
 async function boot() {
   const res = await apiFetch('/api/auth/me');
@@ -78,7 +97,7 @@ async function openScanModal() {
     select.innerHTML = '<option value="">No profiles — create one first</option>';
     return;
   }
-  select.innerHTML = profiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  select.innerHTML = profiles.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.name)}</option>`).join('');
 }
 
 async function startScan() {

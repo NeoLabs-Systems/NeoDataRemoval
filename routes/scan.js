@@ -67,7 +67,10 @@ router.get('/:scanId/stream', (req, res) => {
     }
   }, 800);
 
-  req.on('close', () => clearInterval(interval));
+  const MAX_SSE_MS = 45 * 60 * 1000; // 45 minutes — safety cap
+  const maxTimer = setTimeout(() => { clearInterval(interval); res.end(); }, MAX_SSE_MS);
+
+  req.on('close', () => { clearInterval(interval); clearTimeout(maxTimer); });
 });
 
 /* GET /api/scan/history — list scans for user */

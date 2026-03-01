@@ -1,6 +1,6 @@
 // brokers.js
 'use strict';
-import { apiFetch, state } from './app.js';
+import { apiFetch, state, escHtml, safeHref } from './app.js';
 
 export async function renderBrokers(container) {
   const isAdmin = state.user && state.user.role === 'admin';
@@ -73,16 +73,16 @@ export async function renderBrokers(container) {
       <table>
         <thead><tr><th>Name</th><th>Priority</th><th>Method</th><th>Automation</th><th>Instructions</th>${isAdmin ? '<th>Actions</th>' : ''}</tr></thead>
         <tbody>${list.map(b => `
-          <tr data-id="${b.id}">
-            <td><a href="${b.url || '#'}" target="_blank" rel="noopener" style="color:var(--accent)">${b.name}</a></td>
+          <tr data-id="${escHtml(b.id)}">
+            <td><a href="${safeHref(b.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">${escHtml(b.name)}</a></td>
             <td>${chipPriority(b.priority)}</td>
-            <td><span class="chip chip-manual">${b.method || '—'}</span></td>
-            <td><small style="color:var(--muted)">${b.automation || '—'}</small></td>
-            <td style="font-size:.8rem;color:var(--muted2);max-width:280px">${b.instructions || '—'}</td>
+            <td><span class="chip chip-manual">${escHtml(b.method)}</span></td>
+            <td><small style="color:var(--muted)">${escHtml(b.automation)}</small></td>
+            <td style="font-size:.8rem;color:var(--muted2);max-width:280px">${escHtml(b.instructions)}</td>
             ${isAdmin ? `<td>
               <div style="display:flex;gap:6px">
-                <button class="btn-secondary btn-sm btn-edit-broker" data-id="${b.id}">Edit</button>
-                <button class="btn-danger btn-sm btn-del-broker" data-id="${b.id}">Del</button>
+                <button class="btn-secondary btn-sm btn-edit-broker" data-id="${escHtml(b.id)}">Edit</button>
+                <button class="btn-danger btn-sm btn-del-broker" data-id="${escHtml(b.id)}">Del</button>
               </div>
             </td>` : ''}
           </tr>`).join('')}
@@ -167,5 +167,5 @@ export async function renderBrokers(container) {
 }
 
 function chipPriority(p) {
-  return `<span class="chip chip-${p}">${p}</span>`;
+  return `<span class="chip chip-${escHtml(p)}">${escHtml(p)}</span>`;
 }

@@ -2,13 +2,13 @@
 
 const crypto = require('crypto');
 
-function cacheKey(brokerName, fullName) {
-  return crypto.createHash('sha256').update(`${brokerName}|${fullName}`).digest('hex');
+function cacheKey(brokerName, fullName, userId) {
+  return crypto.createHash('sha256').update(`${userId}:${brokerName}|${fullName}`).digest('hex');
 }
 
-async function draftRemovalEmail(brokerName, profile, brokerUrl) {
+async function draftRemovalEmail(brokerName, profile, brokerUrl, userId) {
   const db      = require('../db/database').getDb();
-  const key     = cacheKey(brokerName, profile.full_name || '');
+  const key     = cacheKey(brokerName, profile.full_name || '', userId || 0);
   const cached  = db.prepare('SELECT content, created_at FROM ai_cache WHERE cache_key = ?').get(key);
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 

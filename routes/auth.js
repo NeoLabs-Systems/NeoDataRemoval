@@ -35,10 +35,9 @@ router.post('/register', authLimiter, async (req, res) => {
 
   const db   = getDb();
   const normalEmail = email.trim().toLowerCase();
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
-  if (existing) return res.status(409).json({ error: 'Username already taken' });
+  const existing  = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
   const emailTaken = db.prepare('SELECT id FROM users WHERE email = ?').get(normalEmail);
-  if (emailTaken) return res.status(409).json({ error: 'Email already registered' });
+  if (existing || emailTaken) return res.status(409).json({ error: 'Username or email already in use' });
 
   const hash  = await bcrypt.hash(password, 12);
   const count = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
@@ -100,13 +99,22 @@ router.get('/me', requireAuth, (req, res) => {
 
 /* POST /api/auth/change-password */
 router.post('/change-password', requireAuth, async (req, res) => {
-  const { password } = req.body || {};
+  const { current_password, password } = req.body || {};
+  if (!current_password)
+    return res.status(400).json({ error: 'current_password is required' });
   if (!password || password.length < 10)
-    return res.status(400).json({ error: 'Password must be at least 10 characters' });
+    return res.status(400).json({ error: 'New password must be at least 10 characters' });
+
   const db   = getDb();
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  const ok   = await bcrypt.compare(current_password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+
   const hash = await bcrypt.hash(password, 12);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
-  res.json({ ok: true });
+  // Invalidate session so the user must log in with the new password
+  res.clearCookie('token');
+  res.json({ ok: true, relogin: true });
 });
 
 /* GET /api/auth/2fa/status */

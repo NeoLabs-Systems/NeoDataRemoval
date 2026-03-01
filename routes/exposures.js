@@ -27,7 +27,10 @@ router.get('/', (req, res) => {
   if (priority)                 { sql += ' AND b.priority = ?';   args.push(priority); }
   if (req.query.hide_assumed)   { sql += " AND e.status != 'assumed'"; }
 
-  sql += " ORDER BY CASE b.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, e.detected_at DESC";
+  const limitParam = Math.min(Math.max(1, parseInt(req.query.limit) || 500), 500);
+
+  sql += " ORDER BY CASE b.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, e.detected_at DESC LIMIT ?";
+  args.push(limitParam);
 
   res.json(db.prepare(sql).all(...args));
 });
@@ -70,6 +73,16 @@ router.patch('/:id', (req, res) => {
   const { status, notes, profile_url } = req.body || {};
   const allowed = ['detected','assumed','removal_sent','ai_email_sent','removal_confirmed','manual_pending','re_exposed','not_found'];
   if (status && !allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  if (notes && notes.length > 2000) return res.status(400).json({ error: 'Notes must be 2000 characters or fewer' });
+
+  // Validate profile_url before persisting — only allow http/https
+  let safeProfileUrl = null;
+  if (profile_url) {
+    try {
+      const u = new URL(profile_url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') safeProfileUrl = profile_url;
+    } catch { /* invalid URL — discard */ }
+  }
 
   db.prepare(`
     UPDATE exposures SET
@@ -78,7 +91,7 @@ router.patch('/:id', (req, res) => {
       profile_url  = COALESCE(?, profile_url),
       last_updated = unixepoch()
     WHERE id = ?
-  `).run(status || null, notes || null, profile_url || null, row.id);
+  `).run(status || null, notes || null, safeProfileUrl, row.id);
 
   res.json({ ok: true });
 });
