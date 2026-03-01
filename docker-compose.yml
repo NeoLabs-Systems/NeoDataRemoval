@@ -6,16 +6,17 @@ services:
     container_name: neodataremoval
     restart: unless-stopped
     ports:
-      - "${PUBLIC_PORT:-3000}:3000"
+      - "${PUBLIC_PORT:-3060}:3060"
     env_file:
       - .env
     environment:
       - NODE_ENV=production
+      - PORT=3060
       - TRUST_PROXY=1
     volumes:
       - db_data:/app/db_data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/auth/me"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3060/api/auth/me"]
       interval: 30s
       timeout: 5s
       retries: 3
