@@ -1,0 +1,12 @@
+{
+  "name": "NeoDataRemoval",
+  "short_name": "NeoDataRemoval",
+  "description": "Monitor and remove your personal data from the internet",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08080e",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,0 +1,137 @@
+/* login.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #08080e;
+  --surface:   rgba(255,255,255,.04);
+  --border:    rgba(255,255,255,.08);
+  --accent:    #6366f1;
+  --accent2:   #8b5cf6;
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --danger:    #f87171;
+  --radius:    14px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* animated bg orbs */
+.bg-orbs { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: .35;
+  animation: drift 14s ease-in-out infinite alternate;
+}
+.orb-1 { width: 480px; height: 480px; background: radial-gradient(circle, var(--accent), transparent 70%); top: -120px; left: -80px; }
+.orb-2 { width: 420px; height: 420px; background: radial-gradient(circle, var(--accent2), transparent 70%); bottom: -100px; right: -60px; animation-delay: -7s; }
+@keyframes drift { from { transform: translate(0,0); } to { transform: translate(40px, 30px); } }
+
+/* card */
+.card-wrap {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 24px;
+}
+
+.card {
+  width: 100%; max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px 36px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 0 0 1px rgba(99,102,241,.1), 0 24px 48px rgba(0,0,0,.6);
+  animation: slideUp .4s cubic-bezier(.16,1,.3,1) both;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card-logo { display: flex; justify-content: center; margin-bottom: 12px; }
+.card-title {
+  text-align: center; font-size: 1.35rem; font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.card-sub { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 4px; margin-bottom: 24px; }
+
+/* tabs */
+.tab-bar {
+  display: flex; gap: 4px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 24px;
+}
+.tab {
+  flex: 1; padding: 8px 12px;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--muted);
+  font-size: .85rem; font-weight: 500; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { background: rgba(99,102,241,.18); color: var(--accent); }
+
+/* form */
+.form { display: flex; flex-direction: column; gap: 16px; }
+.form.hidden { display: none; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.field input {
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: .95rem;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.2); }
+.optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.error { color: var(--danger); font-size: .82rem; min-height: 1.2em; }
+
+.btn-primary {
+  margin-top: 4px;
+  padding: 11px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  border: none; border-radius: 9px;
+  font-size: .95rem; font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+}
+.btn-primary:hover { opacity: .9; transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+/* ---- LIGHT MODE (automatic, follows OS preference) ---- */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:      #f4f4fa;
+    --surface: rgba(255,255,255,.85);
+    --border:  rgba(0,0,0,.10);
+    --text:    #14141e;
+    --muted:   #6060a0;
+  }
+  .orb { opacity: .18; }
+  .card {
+    box-shadow: 0 0 0 1px rgba(99,102,241,.12), 0 8px 32px rgba(0,0,0,.08);
+  }
+}
