@@ -11,6 +11,20 @@ function cacheKey(brokerName, fullName, userId) {
     .digest("hex");
 }
 
+/**
+ * Returns true for GPT-5 family models that require the Responses API.
+ * The special alias "gpt-5-chat-latest" is intentionally excluded because
+ * it is a Chat Completions-compatible snapshot of GPT-5.
+ */
+function usesResponsesApi(model) {
+  return (
+    (/^gpt-5(\.|-)/.test(model) ||
+      model === "gpt-5" ||
+      model === "gpt-5-mini") &&
+    !model.startsWith("gpt-5-chat")
+  );
+}
+
 async function draftRemovalEmail(brokerName, profile, brokerUrl, userId) {
   const apiKey = sysconfig.get("openai_api_key");
   if (!apiKey) return null;
@@ -35,7 +49,7 @@ async function draftRemovalEmail(brokerName, profile, brokerUrl, userId) {
 
   const openai = new (OpenAI.default || OpenAI)({ apiKey });
 
-  const model = sysconfig.get("openai_model") || "gpt-4o-mini";
+  const model = sysconfig.get("openai_model") || "gpt-4.1-mini";
   const name = profile.full_name || "Unknown";
   const address = profile.addresses && profile.addresses[0];
   const addrStr = address
@@ -57,12 +71,25 @@ async function draftRemovalEmail(brokerName, profile, brokerUrl, userId) {
 
   let draft = null;
   try {
-    const resp = await openai.chat.completions.create({
-      model,
-      max_tokens: 450,
-      messages: [{ role: "user", content: prompt }],
-    });
-    draft = resp.choices[0]?.message?.content?.trim() || null;
+    if (usesResponsesApi(model)) {
+      // ── Responses API (GPT-5.x family) ────────────────────────────────
+      // Uses `input` instead of `messages` and `max_output_tokens` instead
+      // of `max_tokens`.  Response text is at `resp.output_text`.
+      const resp = await openai.responses.create({
+        model,
+        input: prompt,
+        max_output_tokens: 450,
+      });
+      draft = resp.output_text?.trim() || null;
+    } else {
+      // ── Chat Completions API (GPT-4.x, GPT-3.x, gpt-5-chat-latest) ───
+      const resp = await openai.chat.completions.create({
+        model,
+        max_tokens: 450,
+        messages: [{ role: "user", content: prompt }],
+      });
+      draft = resp.choices[0]?.message?.content?.trim() || null;
+    }
   } catch (err) {
     console.error("[AI] OpenAI call failed:", err.message);
     return null;

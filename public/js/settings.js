@@ -436,11 +436,30 @@ async function _renderSystemPanel() {
       ${field("openai_model", "Model", {
         options: [
           {
-            value: "gpt-4o-mini",
-            label: "gpt-4o-mini (recommended, fast & cheap)",
+            value: "gpt-4.1-mini",
+            label: "gpt-4.1-mini (recommended — fast & cost-effective)",
           },
-          { value: "gpt-4o", label: "gpt-4o (better quality, higher cost)" },
-          { value: "gpt-4-turbo", label: "gpt-4-turbo" },
+          {
+            value: "gpt-4.1",
+            label: "gpt-4.1 (smarter, great for complex prompts)",
+          },
+          {
+            value: "gpt-4.1-nano",
+            label: "gpt-4.1-nano (fastest & cheapest)",
+          },
+          {
+            value: "gpt-5-mini",
+            label: "gpt-5-mini (near-frontier quality, low cost)",
+          },
+          {
+            value: "gpt-5.4",
+            label: "gpt-5.4 (flagship — highest quality, uses Responses API)",
+          },
+          {
+            value: "gpt-4o-mini",
+            label: "gpt-4o-mini (legacy)",
+          },
+          { value: "gpt-4o", label: "gpt-4o (legacy)" },
           { value: "gpt-3.5-turbo", label: "gpt-3.5-turbo (legacy)" },
         ],
       })}
