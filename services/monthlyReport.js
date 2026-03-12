@@ -1,37 +1,55 @@
-'use strict';
+"use strict";
 
-const nodemailer = require('nodemailer');
-
-let transporter = null;
+const sysconfig = require("./sysconfig");
 
 function getTransporter() {
-  if (transporter) return transporter;
-  const host = process.env.SMTP_HOST;
+  const nodemailer = require("nodemailer");
+  const host = sysconfig.get("smtp_host");
   if (!host) return null;
-  transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host,
-    port:   parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    port: parseInt(sysconfig.get("smtp_port")) || 587,
+    secure: sysconfig.get("smtp_secure") === "true",
+    auth: {
+      user: sysconfig.get("smtp_user") || undefined,
+      pass: sysconfig.get("smtp_pass") || undefined,
+    },
   });
-  return transporter;
 }
 
-function buildReportHtml({ username, totalExposures, newExposures, removedCount, scanDate }) {
+function buildReportHtml({
+  username,
+  totalExposures,
+  newExposures,
+  removedCount,
+  scanDate,
+}) {
   const hasNew = newExposures.length > 0;
-  const formattedDate = new Date(scanDate * 1000).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
+  const formattedDate = new Date(scanDate * 1000).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 
-  const newRows = newExposures.map(e => `
+  const newRows = newExposures
+    .map(
+      (e) => `
     <tr>
       <td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;color:#e2e0ee;font-size:14px">${escHtml(e.broker_name)}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;font-size:13px">
         <span style="background:#3b1a47;color:#c084fc;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${escHtml(e.status)}</span>
       </td>
-      ${(e.profile_url && /^https?:\/\//i.test(e.profile_url)) ? `<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e"><a href="${escHtml(e.profile_url)}" style="color:#7c3aed;font-size:13px;text-decoration:none">View listing</a></td>` : '<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;color:#6b6784;font-size:13px">—</td>'}
+      ${
+        e.profile_url && /^https?:\/\//i.test(e.profile_url)
+          ? `<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e"><a href="${escHtml(e.profile_url)}" style="color:#7c3aed;font-size:13px;text-decoration:none">View listing</a></td>`
+          : '<td style="padding:10px 14px;border-bottom:1px solid #1e1e2e;color:#6b6784;font-size:13px">—</td>'
+      }
     </tr>
-  `).join('');
+  `,
+    )
+    .join("");
+
+  const appUrl = sysconfig.get("app_url") || "http://localhost:3060";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -59,8 +77,8 @@ function buildReportHtml({ username, totalExposures, newExposures, removedCount,
         <div style="color:#c084fc;font-size:32px;font-weight:700;line-height:1">${totalExposures}</div>
         <div style="color:#9892b0;font-size:13px;margin-top:6px">Total Exposures</div>
       </div>
-      <div style="flex:1;min-width:140px;background:#16162a;border:1px solid ${hasNew ? '#7c3aed' : '#2a2a45'};border-radius:12px;padding:20px;text-align:center">
-        <div style="color:${hasNew ? '#f472b6' : '#6b6784'};font-size:32px;font-weight:700;line-height:1">${newExposures.length}</div>
+      <div style="flex:1;min-width:140px;background:#16162a;border:1px solid ${hasNew ? "#7c3aed" : "#2a2a45"};border-radius:12px;padding:20px;text-align:center">
+        <div style="color:${hasNew ? "#f472b6" : "#6b6784"};font-size:32px;font-weight:700;line-height:1">${newExposures.length}</div>
         <div style="color:#9892b0;font-size:13px;margin-top:6px">New This Month</div>
       </div>
       <div style="flex:1;min-width:140px;background:#16162a;border:1px solid #2a2a45;border-radius:12px;padding:20px;text-align:center">
@@ -69,7 +87,9 @@ function buildReportHtml({ username, totalExposures, newExposures, removedCount,
       </div>
     </div>
 
-    ${hasNew ? `
+    ${
+      hasNew
+        ? `
     <!-- New exposures table -->
     <div style="background:#16162a;border:1px solid #2a2a45;border-radius:12px;overflow:hidden;margin-bottom:32px">
       <div style="padding:16px 20px;border-bottom:1px solid #2a2a45;background:#1a1a2e">
@@ -86,24 +106,26 @@ function buildReportHtml({ username, totalExposures, newExposures, removedCount,
         <tbody>${newRows}</tbody>
       </table>
     </div>
-    ` : `
+    `
+        : `
     <!-- All clear -->
     <div style="background:#0d2818;border:1px solid #166534;border-radius:12px;padding:32px;text-align:center;margin-bottom:32px">
       <div style="font-size:36px;margin-bottom:12px">✅</div>
       <h2 style="color:#4ade80;font-size:18px;font-weight:600;margin:0 0 8px">No New Exposures</h2>
       <p style="color:#86efac;font-size:14px;margin:0">No new data broker listings were found this month.</p>
     </div>
-    `}
+    `
+    }
 
     <!-- CTA -->
     <div style="text-align:center;margin-bottom:40px">
-      <a href="${process.env.APP_URL || 'http://localhost:3000'}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600">Open Dashboard</a>
+      <a href="${escHtml(appUrl)}" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600">Open Dashboard</a>
     </div>
 
     <!-- Footer -->
     <div style="text-align:center;border-top:1px solid #1e1e2e;padding-top:24px">
       <p style="color:#4a4760;font-size:12px;margin:0 0 4px">NeoDataRemoval · Self-hosted privacy protection</p>
-      <p style="color:#4a4760;font-size:12px;margin:0">This report was auto-generated and sent to ${escHtml(username)}'s registered email.</p>
+      <p style="color:#4a4760;font-size:12px;margin:0">This report was auto-generated for ${escHtml(username)}.</p>
     </div>
 
   </div>
@@ -112,36 +134,44 @@ function buildReportHtml({ username, totalExposures, newExposures, removedCount,
 }
 
 function escHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function sendMonthlyReport(user, db) {
   const transport = getTransporter();
   if (!transport || !user.email) return;
 
-  const since = (user.monthly_scan_triggered_at || 0) - 86400; // 1 day before scan trigger as buffer
+  const since = (user.monthly_scan_triggered_at || 0) - 86400;
 
-  const totalExposures = db.prepare(
-    "SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status IN ('detected','re_exposed','assumed')"
-  ).get(user.id).c;
+  const totalExposures = db
+    .prepare(
+      "SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status IN ('detected','re_exposed','assumed')",
+    )
+    .get(user.id).c;
 
-  const newExposures = db.prepare(`
+  const newExposures = db
+    .prepare(
+      `
     SELECT e.status, e.profile_url, b.name as broker_name
     FROM exposures e
     JOIN brokers b ON b.id = e.broker_id
     WHERE e.user_id = ?
-      AND e.status IN ('detected', 're_exposed')
+      AND e.status IN ('detected', 're_exposed', 'assumed')
       AND e.last_updated >= ?
     ORDER BY e.last_updated DESC
-  `).all(user.id, since);
+  `,
+    )
+    .all(user.id, since);
 
-  const removedCount = db.prepare(
-    "SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status = 'removed'"
-  ).get(user.id).c;
+  const removedCount = db
+    .prepare(
+      "SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status = 'removal_confirmed'",
+    )
+    .get(user.id).c;
 
   const html = buildReportHtml({
     username: user.username,
@@ -151,20 +181,28 @@ async function sendMonthlyReport(user, db) {
     scanDate: Math.floor(Date.now() / 1000),
   });
 
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'NeoDataRemoval <noreply@localhost>';
+  const from =
+    sysconfig.get("smtp_from") ||
+    sysconfig.get("smtp_user") ||
+    "NeoDataRemoval <noreply@localhost>";
 
   try {
     await transport.sendMail({
       from,
-      to:      user.email,
-      subject: newExposures.length > 0
-        ? `⚠ ${newExposures.length} new exposure${newExposures.length > 1 ? 's' : ''} found — NeoDataRemoval Monthly Report`
-        : '✅ Monthly Privacy Report — No new exposures',
+      to: user.email,
+      subject:
+        newExposures.length > 0
+          ? `⚠ ${newExposures.length} new exposure${newExposures.length > 1 ? "s" : ""} found — NeoDataRemoval Monthly Report`
+          : "✅ Monthly Privacy Report — No new exposures",
       html,
     });
     console.log(`[MonthlyReport] Report sent to ${user.email}`);
   } catch (err) {
-    console.error(`[MonthlyReport] Failed to send to ${user.email}:`, err.message);
+    console.error(
+      `[MonthlyReport] Failed to send to ${user.email}:`,
+      err.message,
+    );
+    throw err;
   }
 }
 

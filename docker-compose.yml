@@ -7,12 +7,17 @@ services:
     restart: unless-stopped
     ports:
       - "${PUBLIC_PORT:-3060}:3060"
-    env_file:
-      - .env
     environment:
       - NODE_ENV=production
       - PORT=3060
       - TRUST_PROXY=1
+      # Secrets are auto-generated on first boot and saved to the db_data volume.
+      # You do NOT need to set ENCRYPTION_KEY or JWT_SECRET here — the app handles it.
+      #
+      # If you prefer to manage secrets yourself (e.g. via Docker secrets or a vault),
+      # uncomment and fill in:
+      # - ENCRYPTION_KEY=<64-char hex>
+      # - JWT_SECRET=<long random string>
     volumes:
       - db_data:/app/db_data
     healthcheck:
@@ -20,6 +25,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
 
 volumes:
   db_data:
