@@ -6,6 +6,7 @@ const { safeDecrypt } = require('./crypto');
 const emailRemover    = require('./emailRemover');
 
 const UA = 'Mozilla/5.0 (compatible; PrivacyBot/1.0)';
+const ACTIONABLE_EXPOSURE_STATUSES = new Set(['detected', 'assumed', 're_exposed']);
 
 /* Build a flat profile object from DB row */
 function getProfile(profileId, userId) {
@@ -98,6 +99,9 @@ async function sendRemoval(exposureId, userId, useAi, draftBody = null) {
   const exposure = exposureRow ? enrichExposure(exposureRow) : null;
 
   if (!exposure) throw new Error('Exposure not found');
+  if (!ACTIONABLE_EXPOSURE_STATUSES.has(exposure.status)) {
+    throw new Error('Removal is only available for active exposures.');
+  }
 
   const profile = getProfile(exposure.profile_id, userId);
   if (!profile)  throw new Error('Profile not found or decryption failed');

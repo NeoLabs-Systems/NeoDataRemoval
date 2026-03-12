@@ -101,6 +101,7 @@ export async function renderExposures(container) {
       <table>
         <thead><tr><th>Broker</th><th>Priority</th><th>Status</th><th>How Detected</th><th>Verify</th><th>Detected</th><th>Actions</th></tr></thead>
         <tbody>${rows.map(e => {
+          const canSendRemoval = ['detected', 'assumed', 're_exposed'].includes(e.status);
           const detectionLabel = e.automation === 'assumes_present'
             ? '<span title="Broker doesn\'t allow public search — your data is typically listed automatically for most people" style="color:var(--muted);font-size:.78rem;cursor:help;">⚠ Assumed present</span>'
             : e.automation === 'browser_required'
@@ -124,10 +125,10 @@ export async function renderExposures(container) {
             <td style="white-space:nowrap">${fmtDate(e.detected_at)}</td>
             <td>
               <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button class="btn-secondary btn-sm btn-send-removal" data-id="${escHtml(e.id)}" ${['removal_sent','ai_email_sent','removal_confirmed'].includes(e.status) ? 'disabled' : ''}>
+                <button class="btn-secondary btn-sm btn-send-removal" data-id="${escHtml(e.id)}" ${!canSendRemoval ? 'disabled' : ''}>
                   Send Removal
                 </button>
-                <button class="btn-secondary btn-sm btn-ai-remove" data-id="${escHtml(e.id)}" title="Use AI to draft opt-out email">AI</button>
+                <button class="btn-secondary btn-sm btn-ai-remove" data-id="${escHtml(e.id)}" title="Use AI to draft opt-out email" ${!canSendRemoval ? 'disabled' : ''}>AI</button>
                 <button class="btn-danger btn-sm btn-del-exp" data-id="${escHtml(e.id)}">✕</button>
               </div>
             </td>
@@ -181,7 +182,12 @@ export async function renderExposures(container) {
 
     const res = await apiFetch(`/api/removals/${id}/draft?ai=${useAi ? '1' : '0'}`);
     btn.disabled = false; btn.textContent = useAi ? 'AI' : 'Send Removal';
-    if (!res || !res.ok) { alert('Could not generate preview.'); return; }
+    if (!res) return;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || 'Could not generate preview.');
+      return;
+    }
     const draft = await res.json();
 
     document.getElementById('previewTo').value      = draft.to || '(no contact email on file)';

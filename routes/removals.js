@@ -5,6 +5,7 @@ const router   = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { enrichExposure, resolveBroker }  = require('../services/brokerCatalog');
 const { sendRemoval }  = require('../services/remover');
+const ACTIONABLE_EXPOSURE_STATUSES = new Set(['detected', 'assumed', 're_exposed']);
 
 // POST /api/removals/:exposureId  — trigger a removal attempt
 router.post('/:exposureId', requireAuth, async (req, res) => {
@@ -16,7 +17,8 @@ router.post('/:exposureId', requireAuth, async (req, res) => {
     res.json({ ok: true, method: result.method, notes: result.notes });
   } catch (err) {
     console.error('[removals] sendRemoval error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    const statusCode = err.message === 'Removal is only available for active exposures.' ? 400 : 500;
+    res.status(statusCode).json({ error: statusCode === 400 ? err.message : 'Internal server error' });
   }
 });
 
@@ -86,6 +88,9 @@ router.get('/:exposureId/draft', requireAuth, async (req, res) => {
   const exposure = exposureRow ? enrichExposure(exposureRow) : null;
 
   if (!exposure) return res.status(404).json({ error: 'Exposure not found' });
+  if (!ACTIONABLE_EXPOSURE_STATUSES.has(exposure.status)) {
+    return res.status(400).json({ error: 'Removal draft is only available for active exposures.' });
+  }
 
   const row = db.prepare('SELECT * FROM profiles WHERE id = ? AND user_id = ?').get(exposure.profile_id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Profile not found' });
