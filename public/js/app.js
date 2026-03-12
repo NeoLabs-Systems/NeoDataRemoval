@@ -158,14 +158,19 @@ async function startScan() {
 
   // Stream progress via SSE
   const evtSource = new EventSource(`/api/scan/${scanId}/stream`);
+  let pollTimer = null;
+  let finished = false;
 
-  evtSource.onmessage = (e) => {
-    let msg;
-    try {
-      msg = JSON.parse(e.data);
-    } catch {
-      return;
+  function cleanupStream() {
+    evtSource.close();
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
     }
+  }
+
+  function handleScanUpdate(msg) {
+    if (!msg) return;
 
     // total_brokers is set at scan start; total_checked increments per broker
     const total = msg.total_brokers || msg.total_checked || 1;
@@ -182,7 +187,8 @@ async function startScan() {
     }
 
     if (msg.status === "done" || msg.status === "error") {
-      evtSource.close();
+      finished = true;
+      cleanupStream();
       btn.disabled = false;
       btn.textContent = "Start Scan";
 
@@ -204,17 +210,35 @@ async function startScan() {
         progress.classList.add("hidden");
       }
     }
+  }
+
+  evtSource.onmessage = (e) => {
+    let msg;
+    try {
+      msg = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    handleScanUpdate(msg);
   };
 
   evtSource.onerror = () => {
+    if (finished || pollTimer) return;
+
     evtSource.close();
+    statTxt.textContent = "Live updates interrupted. Switching to fallback polling…";
+
+    pollTimer = setInterval(async () => {
+      const statusRes = await apiFetch(`/api/scan/${scanId}/status`);
+      if (!statusRes || !statusRes.ok) return;
+      const statusMsg = await statusRes.json();
+      handleScanUpdate(statusMsg);
+    }, 1500);
+
     if (!err.textContent) {
       err.textContent =
-        "Connection lost — the scan may still be running in the background.";
+        "Live scan stream disconnected. Progress will continue via fallback polling.";
     }
-    btn.disabled = false;
-    btn.textContent = "Start Scan";
-    document.getElementById("scanProfileField").classList.remove("hidden");
   };
 }
 
