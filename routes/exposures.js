@@ -2,6 +2,7 @@
 
 const router    = require('express').Router();
 const { getDb } = require('../db/database');
+const { enrichExposure } = require('../services/brokerCatalog');
 const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
@@ -12,10 +13,8 @@ router.get('/', (req, res) => {
   const { profile_id, status, priority } = req.query;
 
   let sql  = `
-    SELECT e.*, b.name as broker_name, b.url as broker_url, b.priority, b.method,
-           b.automation, b.opt_out_url, b.instructions, b.contact_email
+    SELECT e.*
     FROM exposures e
-    JOIN brokers b ON b.id = e.broker_id
     WHERE e.user_id = ?
   `;
   const args = [req.user.id];
@@ -24,15 +23,20 @@ router.get('/', (req, res) => {
 
   if (profile_id)               { sql += ' AND e.profile_id = ?'; args.push(profile_id); }
   if (status)                   { sql += ' AND e.status = ?';     args.push(status); }
-  if (priority)                 { sql += ' AND b.priority = ?';   args.push(priority); }
   if (req.query.hide_assumed)   { sql += " AND e.status != 'assumed'"; }
 
   const limitParam = Math.min(Math.max(1, parseInt(req.query.limit) || 500), 500);
 
-  sql += " ORDER BY CASE b.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, e.detected_at DESC LIMIT ?";
+  sql += " ORDER BY e.detected_at DESC LIMIT ?";
   args.push(limitParam);
 
-  res.json(db.prepare(sql).all(...args));
+  let rows = db.prepare(sql).all(...args).map(enrichExposure);
+  if (priority) rows = rows.filter((row) => row.priority === priority);
+  rows.sort((a, b) => {
+    const rank = { critical: 1, high: 2, standard: 3 };
+    return (rank[a.priority] || 9) - (rank[b.priority] || 9) || b.detected_at - a.detected_at;
+  });
+  res.json(rows.slice(0, limitParam));
 });
 
 /* GET /api/exposures/stats */
@@ -45,8 +49,9 @@ router.get('/stats', (req, res) => {
   const done    = db.prepare("SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status = 'removal_confirmed'").get(uid).c;
   const manual  = db.prepare("SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status = 'manual_pending'").get(uid).c;
   const reexp   = db.prepare("SELECT COUNT(*) as c FROM exposures WHERE user_id = ? AND status = 're_exposed'").get(uid).c;
-  const critical= db.prepare("SELECT COUNT(*) as c FROM exposures e JOIN brokers b ON b.id=e.broker_id WHERE e.user_id = ? AND b.priority='critical' AND e.status NOT IN ('not_found','removal_confirmed')").get(uid).c;
-  const high    = db.prepare("SELECT COUNT(*) as c FROM exposures e JOIN brokers b ON b.id=e.broker_id WHERE e.user_id = ? AND b.priority='high' AND e.status NOT IN ('not_found','removal_confirmed')").get(uid).c;
+  const activeRows = db.prepare("SELECT broker_id, broker_key, status FROM exposures WHERE user_id = ? AND status NOT IN ('not_found','removal_confirmed')").all(uid).map(enrichExposure);
+  const critical = activeRows.filter((row) => row.priority === 'critical').length;
+  const high = activeRows.filter((row) => row.priority === 'high').length;
 
   res.json({ total, sent, done, manual, re_exposed: reexp, critical, high });
 });
@@ -55,13 +60,12 @@ router.get('/stats', (req, res) => {
 router.get('/:id', (req, res) => {
   const db  = getDb();
   const row = db.prepare(`
-    SELECT e.*, b.name as broker_name, b.url as broker_url, b.priority, b.method,
-           b.automation, b.opt_out_url, b.instructions, b.contact_email
-    FROM exposures e JOIN brokers b ON b.id = e.broker_id
+    SELECT e.*
+    FROM exposures e
     WHERE e.id = ? AND e.user_id = ?
   `).get(req.params.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Exposure not found' });
-  res.json(row);
+  res.json(enrichExposure(row));
 });
 
 /* PATCH /api/exposures/:id — update status or notes */

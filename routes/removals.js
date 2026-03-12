@@ -3,6 +3,7 @@
 const express  = require('express');
 const router   = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { enrichExposure, resolveBroker }  = require('../services/brokerCatalog');
 const { sendRemoval }  = require('../services/remover');
 
 // POST /api/removals/:exposureId  — trigger a removal attempt
@@ -25,17 +26,23 @@ router.get('/', requireAuth, (req, res) => {
   const { status, profile_id, limit = 100, offset = 0 } = req.query;
   const safeLimit  = Math.min(Math.max(1, parseInt(limit)  || 100), 500);
   const safeOffset = Math.max(0, parseInt(offset) || 0);
-  let sql    = `SELECT rr.*, b.name AS broker_name, e.profile_url
+  let sql    = `SELECT rr.*, e.profile_url
                 FROM removal_requests rr
                 JOIN exposures e ON e.id = rr.exposure_id
-                JOIN brokers b ON b.id = rr.broker_id
                 WHERE rr.user_id = ?`;
   const args = [req.user.id];
   if (status)     { sql += ' AND rr.status = ?';     args.push(status); }
   if (profile_id) { sql += ' AND e.profile_id = ?';  args.push(profile_id); }
   sql += ` ORDER BY rr.sent_at DESC LIMIT ? OFFSET ?`;
   args.push(safeLimit, safeOffset);
-  res.json(db.prepare(sql).all(...args));
+  const rows = db.prepare(sql).all(...args).map((row) => {
+    const broker = resolveBroker(row);
+    return {
+      ...row,
+      broker_name: broker ? broker.name : 'Unknown Broker',
+    };
+  });
+  res.json(rows);
 });
 
 // GET /api/removals/stats  — summary counts
@@ -55,13 +62,13 @@ router.get('/stats', requireAuth, (req, res) => {
 // GET /api/removals/:id — single request
 router.get('/:id', requireAuth, (req, res) => {
   const db = require('../db/database').getDb();
-  const row = db.prepare(`SELECT rr.*, b.name AS broker_name
+  const row = db.prepare(`SELECT rr.*
                            FROM removal_requests rr
-                           JOIN brokers b ON b.id = rr.broker_id
                            WHERE rr.id = ? AND rr.user_id = ?`)
                .get(req.params.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(row);
+  const broker = resolveBroker(row);
+  res.json({ ...row, broker_name: broker ? broker.name : 'Unknown Broker' });
 });
 
 // GET /api/removals/:exposureId/draft — generate AI draft without sending
@@ -70,11 +77,13 @@ router.get('/:exposureId/draft', requireAuth, async (req, res) => {
   const db = require('../db/database').getDb();
   const { safeDecrypt } = require('../services/crypto');
 
-  const exposure = db.prepare(`
-    SELECT e.*, b.name as broker_name, b.url as broker_url, b.contact_email, e.profile_id
-    FROM exposures e JOIN brokers b ON b.id = e.broker_id
+  const exposureRow = db.prepare(`
+    SELECT e.*
+    FROM exposures e
     WHERE e.id = ? AND e.user_id = ?
   `).get(req.params.exposureId, req.user.id);
+
+  const exposure = exposureRow ? enrichExposure(exposureRow) : null;
 
   if (!exposure) return res.status(404).json({ error: 'Exposure not found' });
 

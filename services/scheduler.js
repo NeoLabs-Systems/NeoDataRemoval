@@ -1,5 +1,7 @@
 "use strict";
 
+const { enrichExposure } = require("./brokerCatalog");
+
 /**
  * scheduler.js — background job runner
  *
@@ -80,21 +82,33 @@ async function _runReScanCheck() {
     const candidates = db
       .prepare(
         `
-      SELECT DISTINCT e.profile_id, e.user_id, MIN(b.rescan_days) AS rescan_days
+      SELECT e.profile_id, e.user_id, e.broker_id, e.broker_key
       FROM exposures e
-      JOIN brokers b ON b.id = e.broker_id
       WHERE e.status IN ('detected', 'assumed', 're_exposed', 'removal_sent', 'manual_pending')
-        AND b.rescan_days > 0
-        AND b.enabled = 1
-      GROUP BY e.profile_id, e.user_id
     `,
       )
-      .all();
+      .all()
+      .map(enrichExposure)
+      .filter((row) => row.enabled !== false && (row.rescan_days || 0) > 0)
+      .reduce((acc, row) => {
+        const key = `${row.profile_id}:${row.user_id}`;
+        const current = acc.get(key);
+        if (!current || row.rescan_days < current.rescan_days) {
+          acc.set(key, {
+            profile_id: row.profile_id,
+            user_id: row.user_id,
+            rescan_days: row.rescan_days,
+          });
+        }
+        return acc;
+      }, new Map());
 
-    if (!candidates.length) return;
+    const candidateRows = [...candidates.values()];
+
+    if (!candidateRows.length) return;
 
     let triggered = 0;
-    for (const row of candidates) {
+    for (const row of candidateRows) {
       const lastScan = db
         .prepare(
           `

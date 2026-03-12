@@ -3,6 +3,7 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const fs = require("fs");
+const { makeBrokerKey } = require("../services/brokerCatalog");
 
 const DB_DIR = path.join(__dirname, "..", "db_data");
 const DB_PATH = path.join(DB_DIR, "neodataremoval.db");
@@ -46,21 +47,6 @@ function initDb() {
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
-    CREATE TABLE IF NOT EXISTS brokers (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      name          TEXT NOT NULL,
-      url           TEXT NOT NULL,
-      opt_out_url   TEXT,
-      method        TEXT NOT NULL DEFAULT 'manual',
-      priority      TEXT NOT NULL DEFAULT 'standard',
-      automation    TEXT NOT NULL DEFAULT 'manual',
-      contact_email TEXT,
-      instructions  TEXT,
-      rescan_days   INTEGER DEFAULT 60,
-      enabled       INTEGER DEFAULT 1,
-      created_at    INTEGER DEFAULT (unixepoch())
-    );
-
     CREATE TABLE IF NOT EXISTS scans (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       profile_id    INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -79,7 +65,8 @@ function initDb() {
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       profile_id   INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
       user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      broker_id    INTEGER NOT NULL REFERENCES brokers(id),
+      broker_id    INTEGER,
+      broker_key   TEXT,
       scan_id      INTEGER REFERENCES scans(id),
       status       TEXT NOT NULL DEFAULT 'detected',
       detected_at  INTEGER DEFAULT (unixepoch()),
@@ -97,7 +84,8 @@ function initDb() {
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       exposure_id     INTEGER NOT NULL REFERENCES exposures(id) ON DELETE CASCADE,
       user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      broker_id       INTEGER REFERENCES brokers(id),
+      broker_id       INTEGER,
+      broker_key      TEXT,
       sent_at         INTEGER DEFAULT (unixepoch()),
       method          TEXT NOT NULL,
       status          TEXT DEFAULT 'sent',
@@ -134,8 +122,6 @@ function initDb() {
   `);
 
   _runMigrations();
-  seedBrokers();
-
   // Reset any scans that were left in a running state when the server last stopped
   const stale = db
     .prepare(
@@ -181,6 +167,8 @@ function _runMigrations() {
   if (!scanCols.includes("auto_removal"))
     db.exec("ALTER TABLE scans ADD COLUMN auto_removal INTEGER DEFAULT 0");
 
+  _ensureBrokerKeyMigration();
+
   // Backfill total_brokers from total_checked for old scans where it's 0
   db.prepare(
     `
@@ -190,54 +178,152 @@ function _runMigrations() {
   ).run();
 }
 
-/* ── Broker seeding ──────────────────────────────────────────── */
-function seedBrokers() {
-  const brokersPath = path.join(__dirname, "..", "data", "brokers.json");
-  if (!fs.existsSync(brokersPath)) return;
+function _ensureBrokerKeyMigration() {
+  const exposureCols = db.prepare("PRAGMA table_info(exposures)").all();
+  const removalCols = db.prepare("PRAGMA table_info(removal_requests)").all();
+  const exposureNames = exposureCols.map((col) => col.name);
+  const removalNames = removalCols.map((col) => col.name);
 
-  let brokers;
-  try {
-    brokers = JSON.parse(fs.readFileSync(brokersPath, "utf8"));
-  } catch (err) {
-    console.error("[DB] Failed to parse brokers.json:", err.message);
-    return;
+  if (!exposureNames.includes("broker_key")) {
+    db.exec("ALTER TABLE exposures ADD COLUMN broker_key TEXT");
+  }
+  if (!removalNames.includes("broker_key")) {
+    db.exec("ALTER TABLE removal_requests ADD COLUMN broker_key TEXT");
   }
 
-  const existing = db.prepare("SELECT COUNT(*) as c FROM brokers").get().c;
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_exposures_broker_key ON exposures(broker_key)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_removals_broker_key ON removal_requests(broker_key)",
+  );
 
-  // Insert new; skip if name OR url already exists
-  const insertOne = db.prepare(`
-    INSERT INTO brokers (name, url, opt_out_url, method, priority, automation, contact_email, instructions, rescan_days)
-    SELECT @name, @url, @opt_out_url, @method, @priority, @automation, @contact_email, @instructions, @rescan_days
-    WHERE NOT EXISTS (
-      SELECT 1 FROM brokers WHERE lower(name) = lower(@name) OR url = @url
+  _backfillBrokerKeys();
+
+  const exposureBrokerId = db
+    .prepare("PRAGMA table_info(exposures)")
+    .all()
+    .find((col) => col.name === "broker_id");
+  const removalBrokerId = db
+    .prepare("PRAGMA table_info(removal_requests)")
+    .all()
+    .find((col) => col.name === "broker_id");
+
+  if (exposureBrokerId && exposureBrokerId.notnull) {
+    _rebuildExposuresTable();
+  }
+  if (removalBrokerId && removalBrokerId.notnull) {
+    _rebuildRemovalRequestsTable();
+  }
+}
+
+function _backfillBrokerKeys() {
+  const hasBrokersTable = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'brokers'",
     )
-  `);
+    .get();
+  if (!hasBrokersTable) return;
 
-  const upsertMany = db.transaction((rows) => {
-    let added = 0;
+  const brokerRows = db.prepare("SELECT id, name, url FROM brokers").all();
+  if (!brokerRows.length) return;
+
+  const updateExposure = db.prepare(
+    "UPDATE exposures SET broker_key = ? WHERE broker_id = ? AND (broker_key IS NULL OR broker_key = '')",
+  );
+  const updateRemoval = db.prepare(
+    "UPDATE removal_requests SET broker_key = ? WHERE broker_id = ? AND (broker_key IS NULL OR broker_key = '')",
+  );
+
+  const tx = db.transaction((rows) => {
     for (const row of rows) {
-      const res = insertOne.run({
-        name: row.name || "",
-        url: row.url || "",
-        opt_out_url: row.opt_out_url || null,
-        method: row.method || "manual",
-        priority: row.priority || "standard",
-        automation: row.automation || "browser_required",
-        contact_email: row.contact_email || null,
-        instructions: row.instructions || null,
-        rescan_days: row.rescan_days || 90,
-      });
-      if (res.changes > 0) added++;
+      const brokerKey = makeBrokerKey(row.name, row.url);
+      updateExposure.run(brokerKey, row.id);
+      updateRemoval.run(brokerKey, row.id);
     }
-    return added;
   });
 
-  const added = upsertMany(brokers);
-  if (existing === 0) {
-    console.log(`[DB] Seeded ${added} brokers`);
-  } else if (added > 0) {
-    console.log(`[DB] Added ${added} new broker(s) from brokers.json`);
+  tx(brokerRows);
+}
+
+function _rebuildExposuresTable() {
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec(`
+      CREATE TABLE exposures_new (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id   INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        broker_id    INTEGER,
+        broker_key   TEXT,
+        scan_id      INTEGER REFERENCES scans(id),
+        status       TEXT NOT NULL DEFAULT 'detected',
+        detected_at  INTEGER DEFAULT (unixepoch()),
+        last_updated INTEGER DEFAULT (unixepoch()),
+        profile_url  TEXT,
+        notes        TEXT
+      );
+
+      INSERT INTO exposures_new (
+        id, profile_id, user_id, broker_id, broker_key, scan_id, status,
+        detected_at, last_updated, profile_url, notes
+      )
+      SELECT
+        id, profile_id, user_id, broker_id, broker_key, scan_id, status,
+        detected_at, last_updated, profile_url, notes
+      FROM exposures;
+
+      DROP TABLE exposures;
+      ALTER TABLE exposures_new RENAME TO exposures;
+
+      CREATE INDEX IF NOT EXISTS idx_exposures_user    ON exposures(user_id);
+      CREATE INDEX IF NOT EXISTS idx_exposures_profile ON exposures(profile_id);
+      CREATE INDEX IF NOT EXISTS idx_exposures_broker  ON exposures(broker_id);
+      CREATE INDEX IF NOT EXISTS idx_exposures_broker_key ON exposures(broker_key);
+      CREATE INDEX IF NOT EXISTS idx_exposures_status  ON exposures(status);
+    `);
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function _rebuildRemovalRequestsTable() {
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec(`
+      CREATE TABLE removal_requests_new (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        exposure_id     INTEGER NOT NULL REFERENCES exposures(id) ON DELETE CASCADE,
+        user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        broker_id       INTEGER,
+        broker_key      TEXT,
+        sent_at         INTEGER DEFAULT (unixepoch()),
+        method          TEXT NOT NULL,
+        status          TEXT DEFAULT 'sent',
+        response_status INTEGER,
+        response_body   TEXT,
+        success         INTEGER DEFAULT 0,
+        notes           TEXT
+      );
+
+      INSERT INTO removal_requests_new (
+        id, exposure_id, user_id, broker_id, broker_key, sent_at, method,
+        status, response_status, response_body, success, notes
+      )
+      SELECT
+        id, exposure_id, user_id, broker_id, broker_key, sent_at, method,
+        status, response_status, response_body, success, notes
+      FROM removal_requests;
+
+      DROP TABLE removal_requests;
+      ALTER TABLE removal_requests_new RENAME TO removal_requests;
+
+      CREATE INDEX IF NOT EXISTS idx_removals_user     ON removal_requests(user_id);
+      CREATE INDEX IF NOT EXISTS idx_removals_exposure ON removal_requests(exposure_id);
+      CREATE INDEX IF NOT EXISTS idx_removals_broker_key ON removal_requests(broker_key);
+    `);
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
   }
 }
 

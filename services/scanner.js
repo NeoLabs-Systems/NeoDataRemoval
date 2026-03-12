@@ -19,6 +19,7 @@
  */
 
 const { getDb } = require("../db/database");
+const { listBrokers } = require("./brokerCatalog");
 const { safeDecrypt } = require("./crypto");
 const sysconfig = require("./sysconfig");
 
@@ -179,7 +180,7 @@ function applyResult(
   existing,
   profileId,
   userId,
-  brokerId,
+  broker,
   scanId,
 ) {
   if (result.status === "error") {
@@ -197,13 +198,14 @@ function applyResult(
     // ── Brand new exposure record ──────────────────────────
     db.prepare(
       `
-      INSERT INTO exposures (profile_id, user_id, broker_id, scan_id, status, profile_url)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO exposures (profile_id, user_id, broker_id, broker_key, scan_id, status, profile_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       profileId,
       userId,
-      brokerId,
+      null,
+      broker.key,
       scanId,
       isDetected ? result.status : "not_found",
       result.profile_url || null,
@@ -231,7 +233,7 @@ function applyResult(
     if (PENDING_REMOVAL.has(existing.status)) {
       // Removal attempt did not work — escalate to re_exposed
       console.log(
-        `[Scanner] Removal failed — broker ${brokerId} still shows data (exposure ${existing.id})`,
+        `[Scanner] Removal failed — broker ${broker.key} still shows data (exposure ${existing.id})`,
       );
       db.prepare(
         "UPDATE exposures SET status = 're_exposed', last_updated = unixepoch() WHERE id = ?",
@@ -245,7 +247,7 @@ function applyResult(
     ) {
       // Re-appeared after being clean — mark re_exposed
       console.log(
-        `[Scanner] Re-exposure detected on broker ${brokerId} (exposure ${existing.id})`,
+        `[Scanner] Re-exposure detected on broker ${broker.key} (exposure ${existing.id})`,
       );
       db.prepare(
         "UPDATE exposures SET status = 're_exposed', profile_url = ?, last_updated = unixepoch() WHERE id = ?",
@@ -257,7 +259,7 @@ function applyResult(
     if (PENDING_REMOVAL.has(existing.status)) {
       // Removal confirmed ✅
       console.log(
-        `[Scanner] Removal confirmed for broker ${brokerId} (exposure ${existing.id})`,
+        `[Scanner] Removal confirmed for broker ${broker.key} (exposure ${existing.id})`,
       );
       db.prepare(
         "UPDATE exposures SET status = 'removal_confirmed', last_updated = unixepoch() WHERE id = ?",
@@ -305,16 +307,12 @@ async function runScan(scanId, profileId, userId, onProgress, opts = {}) {
   const profile = JSON.parse(raw);
 
   // Load enabled brokers, highest priority first
-  const brokers = db
-    .prepare(
-      `
-    SELECT * FROM brokers WHERE enabled = 1
-    ORDER BY
-      CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END,
-      name ASC
-  `,
-    )
-    .all();
+  const brokers = listBrokers()
+    .filter((broker) => broker.enabled)
+    .sort((a, b) => {
+      const rank = { critical: 1, high: 2, standard: 3 };
+      return (rank[a.priority] || 9) - (rank[b.priority] || 9) || a.name.localeCompare(b.name);
+    });
 
   const total = brokers.length;
 
@@ -345,12 +343,12 @@ async function runScan(scanId, profileId, userId, onProgress, opts = {}) {
         `
       SELECT id, status, last_updated
       FROM exposures
-      WHERE profile_id = ? AND broker_id = ?
+      WHERE profile_id = ? AND broker_key = ?
       ORDER BY detected_at DESC
       LIMIT 1
     `,
       )
-      .get(profileId, broker.id);
+      .get(profileId, broker.key);
 
     let result;
 
@@ -367,7 +365,7 @@ async function runScan(scanId, profileId, userId, onProgress, opts = {}) {
       existing,
       profileId,
       userId,
-      broker.id,
+      broker,
       scanId,
     );
     if (newFound) found++;
@@ -404,22 +402,26 @@ async function runScan(scanId, profileId, userId, onProgress, opts = {}) {
  */
 async function _runAutoRemovals(scanId, userId, db) {
   const { sendRemoval } = require("./remover");
+  const { enrichExposure } = require("./brokerCatalog");
 
   const exposures = db
     .prepare(
       `
-    SELECT e.id, b.automation, b.method, b.contact_email, b.opt_out_url
+    SELECT e.id, e.broker_id, e.broker_key
     FROM exposures e
-    JOIN brokers b ON b.id = e.broker_id
     WHERE e.scan_id = ?
       AND e.status IN ('detected', 'assumed', 're_exposed')
-      AND (
-        b.automation = 'auto'
-        OR (b.method = 'email' AND b.contact_email IS NOT NULL AND b.contact_email != '')
-      )
   `,
     )
-    .all(scanId);
+    .all(scanId)
+    .map(enrichExposure)
+    .filter(
+      (exposure) =>
+        exposure.automation === 'http_form' ||
+        (exposure.method === 'email' &&
+          exposure.contact_email !== null &&
+          exposure.contact_email !== ''),
+    );
 
   if (!exposures.length) return;
 

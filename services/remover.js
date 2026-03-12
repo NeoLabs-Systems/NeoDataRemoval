@@ -1,6 +1,7 @@
 'use strict';
 
 const { getDb }       = require('../db/database');
+const { enrichExposure } = require('./brokerCatalog');
 const { safeDecrypt } = require('./crypto');
 const emailRemover    = require('./emailRemover');
 
@@ -88,12 +89,13 @@ async function sendEmailRemoval(broker, profile, aiDraft) {
 async function sendRemoval(exposureId, userId, useAi, draftBody = null) {
   const db = getDb();
 
-  const exposure = db.prepare(`
-    SELECT e.*, b.name as broker_name, b.method, b.automation, b.opt_out_url,
-           b.contact_email, b.instructions, b.url as broker_url, e.profile_id
-    FROM exposures e JOIN brokers b ON b.id = e.broker_id
+  const exposureRow = db.prepare(`
+    SELECT e.*
+    FROM exposures e
     WHERE e.id = ? AND e.user_id = ?
   `).get(exposureId, userId);
+
+  const exposure = exposureRow ? enrichExposure(exposureRow) : null;
 
   if (!exposure) throw new Error('Exposure not found');
 
@@ -102,7 +104,7 @@ async function sendRemoval(exposureId, userId, useAi, draftBody = null) {
 
   let result;
 
-  if (exposure.automation === 'auto' && exposure.opt_out_url) {
+  if (exposure.automation === 'http_form' && exposure.opt_out_url) {
     result = await formRemoval(exposure, profile);
   } else if (exposure.method === 'email' || exposure.contact_email) {
     let aiDraft = draftBody || null;
@@ -125,13 +127,17 @@ async function sendRemoval(exposureId, userId, useAi, draftBody = null) {
   `).run(
     exposureId,
     userId,
-    exposure.broker_id,
+    exposure.broker_id || null,
     result.method,
     result.success ? 'sent' : (result.method === 'manual' ? 'manual' : 'failed'),
     result.response_status || null,
     result.response_body   || null,
     result.success ? 1 : 0,
     result.notes   || null,
+  );
+  db.prepare("UPDATE removal_requests SET broker_key = ? WHERE id = ?").run(
+    exposure.broker_key || null,
+    reqResult.lastInsertRowid,
   );
 
   // Update exposure status

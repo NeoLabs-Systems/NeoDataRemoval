@@ -1,6 +1,7 @@
 "use strict";
 
 const sysconfig = require("./sysconfig");
+const { enrichExposure } = require("./brokerCatalog");
 
 function getTransporter() {
   const nodemailer = require("nodemailer");
@@ -156,16 +157,16 @@ async function sendMonthlyReport(user, db) {
   const newExposures = db
     .prepare(
       `
-    SELECT e.status, e.profile_url, b.name as broker_name
+    SELECT e.status, e.profile_url, e.broker_id, e.broker_key
     FROM exposures e
-    JOIN brokers b ON b.id = e.broker_id
     WHERE e.user_id = ?
       AND e.status IN ('detected', 're_exposed', 'assumed')
       AND e.last_updated >= ?
     ORDER BY e.last_updated DESC
   `,
     )
-    .all(user.id, since);
+    .all(user.id, since)
+    .map(enrichExposure);
 
   const removedCount = db
     .prepare(
