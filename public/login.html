@@ -6,6 +6,28 @@
         <title>NeoDataRemoval — Login</title>
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
         <link rel="stylesheet" href="/css/app.css" />
+        <style>
+            .setup-banner {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                background: rgba(124, 58, 237, 0.15);
+                border: 1px solid rgba(124, 58, 237, 0.4);
+                border-radius: 8px;
+                padding: 10px 14px;
+                margin-bottom: 16px;
+                color: #c084fc;
+                font-size: 13px;
+                line-height: 1.4;
+            }
+            .setup-banner svg {
+                flex-shrink: 0;
+                opacity: 0.85;
+            }
+            .setup-banner.hidden {
+                display: none;
+            }
+        </style>
     </head>
     <body>
         <div id="login-page">
@@ -55,7 +77,11 @@
 
                 <div class="login-tabs" id="tab-switcher">
                     <div class="login-tab active" id="tab-login">Sign In</div>
-                    <div class="login-tab" id="tab-register">
+                    <div
+                        class="login-tab"
+                        id="tab-register"
+                        style="display: none"
+                    >
                         Create Account
                     </div>
                 </div>
@@ -106,7 +132,7 @@
                     </button>
                 </form>
 
-                <!-- Register (single-user first-time setup only) -->
+                <!-- Register (first-time setup only) -->
                 <form
                     class="login-form"
                     id="register-form"
@@ -125,12 +151,12 @@
                         />
                     </div>
                     <div class="form-group">
-                        <label for="reg-email"
-                            >Email
+                        <label for="reg-email">
+                            Email
                             <span style="font-weight: 400; opacity: 0.6"
                                 >(for monthly reports)</span
-                            ></label
-                        >
+                            >
+                        </label>
                         <input
                             id="reg-email"
                             name="email"
@@ -174,244 +200,6 @@
             </div>
         </div>
 
-        <script>
-            "use strict";
-
-            const tabSwitcher = document.getElementById("tab-switcher");
-            const tabLogin = document.getElementById("tab-login");
-            const tabRegister = document.getElementById("tab-register");
-            const loginForm = document.getElementById("login-form");
-            const registerForm = document.getElementById("register-form");
-            const loginErr = document.getElementById("login-error");
-            const regErr = document.getElementById("reg-error");
-            const totpGroup = document.getElementById("totp-group");
-            const setupBanner = document.getElementById("setup-banner");
-
-            let pendingCredentials = null;
-
-            /* ── Helpers ───────────────────────────────────────────────── */
-
-            function showErr(el, msg) {
-                el.textContent = msg;
-                el.classList.add("show");
-            }
-
-            function clearErr(el) {
-                el.textContent = "";
-                el.classList.remove("show");
-            }
-
-            function setLoading(btn, loading, label) {
-                btn.disabled = loading;
-                btn.textContent = loading ? "Please wait…" : label;
-            }
-
-            /* ── Registration gate ─────────────────────────────────────── */
-
-            async function checkRegistration() {
-                try {
-                    const r = await fetch("/api/auth/can-register");
-                    if (!r.ok) return;
-                    const { allowed } = await r.json();
-
-                    if (allowed) {
-                        // First-time setup: show register tab and banner, switch to register view
-                        setupBanner.classList.remove("hidden");
-                        tabRegister.style.display = "";
-                        showRegisterTab();
-                    } else {
-                        // Account already exists — hide register tab entirely
-                        tabRegister.style.display = "none";
-                        setupBanner.classList.add("hidden");
-                    }
-                } catch {
-                    // Network error — default to showing sign-in
-                    tabRegister.style.display = "none";
-                }
-            }
-
-            function showLoginTab() {
-                tabLogin.classList.add("active");
-                tabRegister.classList.remove("active");
-                loginForm.style.display = "";
-                registerForm.style.display = "none";
-                clearErr(loginErr);
-                totpGroup.style.display = "none";
-                pendingCredentials = null;
-            }
-
-            function showRegisterTab() {
-                tabRegister.classList.add("active");
-                tabLogin.classList.remove("active");
-                registerForm.style.display = "";
-                loginForm.style.display = "none";
-                clearErr(regErr);
-            }
-
-            tabSwitcher.addEventListener("click", (e) => {
-                const tab = e.target.closest(".login-tab");
-                if (!tab) return;
-                if (tab === tabLogin) showLoginTab();
-                if (tab === tabRegister) showRegisterTab();
-            });
-
-            /* ── Login ─────────────────────────────────────────────────── */
-
-            loginForm.addEventListener("submit", async (e) => {
-                e.preventDefault();
-                clearErr(loginErr);
-                const btn = document.getElementById("login-btn");
-                setLoading(btn, true, "Sign In");
-
-                try {
-                    let body;
-
-                    if (pendingCredentials) {
-                        // 2FA step
-                        const totpCode = document
-                            .getElementById("login-totp")
-                            .value.trim();
-                        if (!totpCode) {
-                            showErr(loginErr, "Enter your authenticator code.");
-                            return;
-                        }
-                        body = { ...pendingCredentials, totp: totpCode };
-                    } else {
-                        body = {
-                            username: document
-                                .getElementById("login-id")
-                                .value.trim(),
-                            password:
-                                document.getElementById("login-pass").value,
-                        };
-                    }
-
-                    const res = await fetch("/api/auth/login", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(body),
-                    });
-                    const data = await res.json();
-
-                    if (res.status === 403 && data["2fa_required"]) {
-                        pendingCredentials = {
-                            username: body.username,
-                            password: body.password,
-                        };
-                        totpGroup.style.display = "";
-                        document.getElementById("login-totp").focus();
-                        btn.textContent = "Verify";
-                        btn.disabled = false;
-                        return;
-                    }
-
-                    if (!res.ok) {
-                        showErr(
-                            loginErr,
-                            data.error ||
-                                "Login failed — check your credentials.",
-                        );
-                        return;
-                    }
-
-                    window.location.href = "/";
-                } catch {
-                    showErr(loginErr, "Network error — please try again.");
-                } finally {
-                    setLoading(
-                        btn,
-                        false,
-                        pendingCredentials ? "Verify" : "Sign In",
-                    );
-                }
-            });
-
-            /* ── Register (first-time setup only) ─────────────────────── */
-
-            registerForm.addEventListener("submit", async (e) => {
-                e.preventDefault();
-                clearErr(regErr);
-
-                const username = document
-                    .getElementById("reg-username")
-                    .value.trim();
-                const email = document.getElementById("reg-email").value.trim();
-                const pass = document.getElementById("reg-pass").value;
-                const pass2 = document.getElementById("reg-pass2").value;
-
-                if (!username) {
-                    showErr(regErr, "Username is required.");
-                    return;
-                }
-                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                    showErr(regErr, "Enter a valid email address.");
-                    return;
-                }
-                if (pass.length < 10) {
-                    showErr(regErr, "Password must be at least 10 characters.");
-                    return;
-                }
-                if (pass !== pass2) {
-                    showErr(regErr, "Passwords do not match.");
-                    return;
-                }
-
-                const btn = document.getElementById("register-btn");
-                setLoading(btn, true, "Create Account");
-
-                try {
-                    const res = await fetch("/api/auth/register", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            username,
-                            email,
-                            password: pass,
-                        }),
-                    });
-                    const data = await res.json();
-
-                    if (!res.ok) {
-                        showErr(regErr, data.error || "Registration failed.");
-                        return;
-                    }
-
-                    window.location.href = "/";
-                } catch {
-                    showErr(regErr, "Network error — please try again.");
-                } finally {
-                    setLoading(btn, false, "Create Account");
-                }
-            });
-
-            /* ── Boot ──────────────────────────────────────────────────── */
-
-            // Hide register tab by default; checkRegistration will show it if needed
-            tabRegister.style.display = "none";
-            checkRegistration();
-        </script>
-
-        <style>
-            .setup-banner {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                background: rgba(124, 58, 237, 0.15);
-                border: 1px solid rgba(124, 58, 237, 0.4);
-                border-radius: 8px;
-                padding: 10px 14px;
-                margin-bottom: 16px;
-                color: #c084fc;
-                font-size: 13px;
-                line-height: 1.4;
-            }
-            .setup-banner svg {
-                flex-shrink: 0;
-                opacity: 0.85;
-            }
-            .setup-banner.hidden {
-                display: none;
-            }
-        </style>
+        <script src="/js/login.js"></script>
     </body>
 </html>
